@@ -1,0 +1,11 @@
+pandas
+numpy
+seaborn
+matplotlib
+plotly
+dask
+distributed
+scipy
+numba
+tqdm
+pyarrow 
