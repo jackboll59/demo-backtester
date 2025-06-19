@@ -1,5 +1,3 @@
-# portfolio
-public code showcase
 # Algorithmic Trading Backtester
 
 This project is a high-performance, feature-rich backtesting engine designed for algorithmic trading strategies on cryptocurrency data. It allows for rigorous testing, optimization, and analysis of trading strategies before deployment. The system is built with Python and leverages powerful libraries like Dask for parallel computing, Numba for speed, and Plotly for interactive visualizations.
