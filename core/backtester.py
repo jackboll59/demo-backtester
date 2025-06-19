@@ -469,12 +469,11 @@ class BacktestResult(PlottingMixin):
             if self.executed_trades:
                 print("  Win Rate by Duration:")
                 for low, high, label in duration_buckets:
-                    trades_in_bucket = [t for t in self.executed_trades 
-                                         if low <= t.get('duration', 0) < high]
-                    if trades_in_bucket:
-                        winning_trades = sum(1 for t in trades_in_bucket if t.get('net_profit_usd', 0) > 0)
-                        bucket_win_rate = (winning_trades / len(trades_in_bucket)) * 100
-                        print(f"    {label}: {bucket_win_rate:.1f}% ({winning_trades}/{len(trades_in_bucket)})")
+                    bucket_trades = [t for t in self.executed_trades if low <= t.get('duration', 0) < high]
+                    if bucket_trades:
+                        winners = sum(1 for t in bucket_trades if t.get('net_profit_usd', 0) > 0)
+                        win_rate = (winners / len(bucket_trades)) * 100
+                        print(f"    {label}: {win_rate:.1f}% ({winners}/{len(bucket_trades)})")
         
         # Session End Analysis
         if self.executed_trades:
@@ -526,12 +525,11 @@ class BacktestResult(PlottingMixin):
             if self.executed_trades:
                 print("  Win Rate by Entry Timing:")
                 for low, high, label in entry_buckets:
-                    trades_in_bucket = [t for t in self.executed_trades 
-                                         if low <= t.get('entry_delay', 0) < high]
-                    if trades_in_bucket:
-                        winning_trades = sum(1 for t in trades_in_bucket if t.get('net_profit_usd', 0) > 0)
-                        bucket_win_rate = (winning_trades / len(trades_in_bucket)) * 100
-                        print(f"    {label}: {bucket_win_rate:.1f}% ({winning_trades}/{len(trades_in_bucket)})")
+                    bucket_trades = [t for t in self.executed_trades if low <= t.get('entry_delay', 0) < high]
+                    if bucket_trades:
+                        winners = sum(1 for t in bucket_trades if t.get('net_profit_usd', 0) > 0)
+                        win_rate = (winners / len(bucket_trades)) * 100
+                        print(f"    {label}: {win_rate:.1f}% ({winners}/{len(bucket_trades)})")
         
         print("-"*40)
         print("Top 5 Coins by Total Net Profit (USD):") 
@@ -558,29 +556,19 @@ class BacktestResult(PlottingMixin):
 
 class Backtester:
     def __init__(self):
-        # Load watch data (this is typically smaller than price data)
+        # Load and validate watch data
         try:
             self.watch_data = pd.read_csv('data/watch_tracking.csv')
-        except FileNotFoundError as e:
-            print(f"Error loading watch data: {e}")
-            print("Please ensure 'watch_tracking.csv' is in the same directory.")
-            raise # Re-raise the exception to stop execution
-        
-        # Convert timestamps for watch data
-        try:
+            if 'watch_id' not in self.watch_data.columns:
+                raise ValueError("'watch_id' column missing in watch_tracking.csv")
             self.watch_data['watch_start_time'] = pd.to_datetime(self.watch_data['watch_start_time'])
             self.watch_data['watch_end_time'] = pd.to_datetime(self.watch_data['watch_end_time'])
-        except KeyError as e:
-             print(f"Error converting timestamp columns in watch data: Missing column {e}")
-             raise
+        except FileNotFoundError:
+            print("Error: watch_tracking.csv not found in data directory")
+            raise
         except Exception as e:
-             print(f"Error converting timestamp columns in watch data: {e}")
-             raise
-        
-        # Verify watch_data has required columns
-        if 'watch_id' not in self.watch_data.columns:
-            print("Error: 'watch_id' column missing in watch_tracking.csv.")
-            raise ValueError("'watch_id' column missing.")
+            print(f"Error loading/processing watch data: {e}")
+            raise
             
         # We'll load price data on demand rather than all at once
         self.price_data_cache = {}  # Cache to store loaded price data by watch_id
@@ -590,13 +578,12 @@ class Backtester:
         
         # Verify price data file exists and has correct columns
         try:
-            # Just read the header to verify columns
             price_data_sample = pd.read_csv('data/price_history.csv', nrows=1)
-            if 'watch_id' not in price_data_sample.columns or 'price' not in price_data_sample.columns or 'timestamp' not in price_data_sample.columns:
-                print("Error: Required columns missing in price_history.csv.")
-                raise ValueError("Required columns missing in price data.")
-        except FileNotFoundError as e:
-            print(f"Error: price_history.csv not found: {e}")
+            required_cols = ['watch_id', 'price', 'timestamp']
+            if not all(col in price_data_sample.columns for col in required_cols):
+                raise ValueError("Required columns missing in price_history.csv")
+        except FileNotFoundError:
+            print("Error: price_history.csv not found")
             raise
             
     def preload_price_data(self):
@@ -717,22 +704,12 @@ class Backtester:
                     print(f"Error: Neither price_history.parquet nor price_history.csv found for {watch_id}.")
                     return pd.DataFrame(columns=['timestamp', 'price'])
             
-            # If no data found, return empty DataFrame
             if prices is None or len(prices) == 0:
                 return pd.DataFrame(columns=['timestamp', 'price'])
             
-            # Convert timestamp
             prices['timestamp'] = pd.to_datetime(prices['timestamp'])
-            
-            # Drop duplicate timestamps, keeping the first occurrence
-            prices = prices.drop_duplicates(subset=['timestamp'], keep='first')
-            
-            # Sort by timestamp
-            prices = prices.sort_values('timestamp')
-            
-            # Cache the result
+            prices = prices.drop_duplicates(subset=['timestamp'], keep='first').sort_values('timestamp')
             self.price_data_cache[watch_id] = prices
-            
             return prices
         except Exception as e:
             print(f"Error loading price data for watch_id {watch_id}: {e}")
@@ -776,35 +753,23 @@ class Backtester:
         # --- Determine iteration order and starting point --- 
         watch_data_indices = self.watch_data.index.tolist()
         
-        # Apply scrambling FIRST if specified
         if scramble_order:
-            print("--- Running in Scramble Mode: Watch session order randomized BEFORE applying start_line ---")
+            print("--- Scramble Mode: Watch session order randomized ---")
             random.shuffle(watch_data_indices)
-        # else: # Optional: Keep this print if you want confirmation when not scrambling
-        #     print("--- Running in Sequential Mode ---")
             
-        # Apply start_line filter AFTER potential scrambling
+        # Apply start_line filter after potential scrambling
         if start_line is not None:
-            # Convert to 0-based index and ensure it's within bounds
-            start_idx = start_line - 1  # Convert from 1-based to 0-based indexing
+            start_idx = start_line - 1
             if start_idx < 0 or start_idx >= len(watch_data_indices):
-                raise ValueError(f"start_line {start_line} is out of range for the (potentially shuffled) data. Valid range is 1 to {len(watch_data_indices)}")
-            # Slice the list (already potentially shuffled) to start from the desired index
+                raise ValueError(f"start_line {start_line} out of range (1-{len(watch_data_indices)})")
             watch_data_indices = watch_data_indices[start_idx:]
-            print(f"Starting backtest from index {start_idx} (line {start_line}) in the (potentially shuffled) watch_tracking sequence.")
-        # --- End iteration order determination ---
+            print(f"Starting from line {start_line} (index {start_idx})")
 
-        # Iterate through each watch session using the determined index order
-        total_sessions_to_process = len(watch_data_indices)
-        #print(f"Processing {total_sessions_to_process} watch sessions...")
-        start_time = time.time() # Start timer
-        processed_count = 0
-
-        for idx in watch_data_indices: # Iterate using shuffled or original index
-            watch = self.watch_data.loc[idx] # Get row by index
+        # Process watch sessions
+        for idx in watch_data_indices:
+            watch = self.watch_data.loc[idx]
             
             watch_id = watch['watch_id']
-            watch_start_time = watch['watch_start_time'] # Get watch start time
             
             # Skip if we've generated max trades for this coin
             if max_trades_per_coin and trades_per_coin[watch_id] >= max_trades_per_coin:
@@ -812,24 +777,19 @@ class Backtester:
                 
             # Get price data for this watch session
             prices = self.get_price_history(watch_id)
-            if len(prices) < 2: # Need at least 2 points for entry and potential exit
+            if len(prices) < 2:
                 continue
                 
             # Get signals from strategy
-            # Ensure strategy handles potential errors gracefully
             try:
                 signals = strategy.generate_signals(prices)
+                if not signals:
+                    continue
             except Exception as e:
-                print(f"Warning: Strategy {strategy.__class__.__name__} failed for watch_id {watch_id}: {e}")
-                signals = [] # Skip this watch session if strategy fails
-                
-            if not signals:
+                print(f"Strategy {strategy.__class__.__name__} failed for {watch_id}: {e}")
                 continue
                 
-            # Process signals
-            open_position = None  # Track the current open position
-            
-            # Sort signals by timestamp to ensure chronological processing
+            # Sort signals chronologically
             signals = sorted(signals, key=lambda s: pd.to_datetime(s[2]))
             
             # Prepare data for numba function
@@ -852,12 +812,12 @@ class Backtester:
                 signal_types = np.array([], dtype=np.int32)
                 signal_prices_arr = np.array([], dtype=np.float64)
             
-            # Convert parameters to appropriate units
+            # Convert parameters for numba function
             execution_delay_ns = execution_delay_seconds * 1_000_000_000
             max_trade_duration_ns = int(max_trade_duration_minutes * 60 * 1_000_000_000) if max_trade_duration_minutes else 0
             max_watch_for_entry_ns = int(max_watch_for_entry_minutes * 60 * 1_000_000_000) if max_watch_for_entry_minutes else 0
-            watch_start_time_ns = watch_start_time.value
-            stop_loss_pct_val = stop_loss_pct if stop_loss_pct is not None else 0.0
+            watch_start_time_ns = watch['watch_start_time'].value
+            stop_loss_pct_val = stop_loss_pct or 0.0
             
             # Call numba function
             (trade_entry_times_ns, trade_entry_prices, trade_exit_times_ns, trade_exit_prices, 

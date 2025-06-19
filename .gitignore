@@ -1,6 +1,5 @@
-/__pycache__
 /downloaded_files
 *.parquet
-/backtester/__pycache__
-/backtester/__init__.py
 *.html
+__init__.py
+__pycache__

@@ -234,18 +234,24 @@ class PlottingMixin:
                     except (ValueError, TypeError):
                         best_summary_dict[col] = 0.0
 
-        # Create subplot figure
-        fig = make_subplots(
-            rows=2, cols=2,
-            subplot_titles=(
-                'Returns vs Drawdown',
-                'Score Distribution',
-                'Trade Count Distribution',
-                'Training vs Test Performance'
-            ),
-            specs=[[{"type": "scatter"}, {"type": "histogram"}],
-                  [{"type": "histogram"}, {"type": "bar"}]]
-        )
+        # Check if walk-forward optimization was used (presence of test metrics indicates WFO)
+        has_wfo = best_summary_dict and all(k in best_summary_dict for k in ['test_return_pct', 'test_drawdown_pct', 'test_win_rate_pct'])
+        
+        # Create subplot figure based on whether WFO was used
+        if has_wfo:
+            fig = make_subplots(
+                rows=1, cols=2,
+                subplot_titles=(
+                    'Returns vs Drawdown (All Parameter Combinations)',
+                    'Training vs Test Performance'
+                ),
+                specs=[[{"type": "scatter"}, {"type": "bar"}]]
+            )
+        else:
+            fig = make_subplots(
+                rows=1, cols=1,
+                subplot_titles=('Returns vs Drawdown (All Parameter Combinations)',)
+            )
 
         # 1. Returns vs Drawdown Scatter Plot
         param_cols = [col for col in results_df.columns if col in parameter_ranges.keys()]
@@ -293,6 +299,11 @@ class PlottingMixin:
                 hover_text.append("Error processing data point")
 
         # Add scatter plot for all points
+        if has_wfo:
+            col_position = 1
+        else:
+            col_position = 1  # Single column layout
+            
         fig.add_trace(
             go.Scatter(
                 x=results_df['max_drawdown_pct'],
@@ -309,7 +320,7 @@ class PlottingMixin:
                 text=hover_text,
                 hoverinfo='text',
             ),
-            row=1, col=1
+            row=1, col=col_position
         )
 
         # Add best point if available
@@ -348,44 +359,13 @@ class PlottingMixin:
                         text=best_hover,
                         hoverinfo='text'
                     ),
-                    row=1, col=1
+                    row=1, col=col_position
                 )
             except Exception as e:
                 print(f"Warning: Could not add best point to plot: {e}")
 
-        # 2. Score Distribution
-        fig.add_trace(
-            go.Histogram(
-                x=results_df['score'],
-                name='Score Distribution',
-                nbinsx=30
-            ),
-            row=1, col=2
-        )
-
-        if best_summary_dict and 'score' in best_summary_dict:
-            try:
-                fig.add_vline(
-                    x=float(best_summary_dict['score']),
-                    line_dash="dash",
-                    line_color="red",
-                    row=1, col=2
-                )
-            except Exception as e:
-                print(f"Warning: Could not add score line: {e}")
-
-        # 3. Trade Count Distribution
-        fig.add_trace(
-            go.Histogram(
-                x=results_df['trades'],
-                name='Trade Count',
-                nbinsx=30
-            ),
-            row=2, col=1
-        )
-
-        # 4. Training vs Test Performance Comparison
-        if best_summary_dict and all(k in best_summary_dict for k in ['test_return_pct', 'test_drawdown_pct', 'test_win_rate_pct']):
+        # 2. Training vs Test Performance Comparison (only if WFO is enabled)
+        if has_wfo:
             try:
                 metrics = ['Return', 'Drawdown', 'Win Rate']
                 train_values = [
@@ -405,7 +385,7 @@ class PlottingMixin:
                         y=train_values,
                         name='Training'
                     ),
-                    row=2, col=2
+                    row=1, col=2
                 )
 
                 fig.add_trace(
@@ -414,15 +394,22 @@ class PlottingMixin:
                         y=test_values,
                         name='Test'
                     ),
-                    row=2, col=2
+                    row=1, col=2
                 )
             except Exception as e:
                 print(f"Warning: Could not add training vs test comparison: {e}")
 
         # Update layout
+        if has_wfo:
+            title_text = "Optimization Results (Walk-Forward Analysis)"
+            height = 600
+        else:
+            title_text = "Optimization Results"
+            height = 600
+            
         fig.update_layout(
-            title_text="Optimization Results",
-            height=800,
+            title_text=title_text,
+            height=height,
             showlegend=True,
             hovermode='closest'
         )

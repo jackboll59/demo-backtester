@@ -208,16 +208,13 @@ class SignalBasedOptimizer:
         param_iterables = []
         optimized_param_names = []
 
-        for param_name, param_range in self.parameter_ranges.items():
-            start, end, step = param_range
+        for param_name, (start, end, step) in self.parameter_ranges.items():
             if step == 0:
                 if start != end:
                      print(f"Warning: Step is 0 for parameter '{param_name}'. Using only start value {start}.")
                 param_iterables.append([start])
             else:
-                epsilon = step / 1000.0 
-                param_iterables.append(np.arange(start, end + epsilon, step))
-                
+                param_iterables.append(np.arange(start, end + step/1000.0, step))
             optimized_param_names.append(param_name)
         
         all_param_combinations = list(product(*param_iterables))
@@ -237,12 +234,11 @@ class SignalBasedOptimizer:
 
         total_combinations = len(all_param_combinations)
         
-        # --- Add random sampling logic ---
+        # Apply random sampling if requested
         if random_sample_size is not None and random_sample_size < total_combinations:
-            print(f"\n--- Running Random Sample Optimization ---")
-            print(f"Selecting a random sample of {random_sample_size} combinations from a total of {total_combinations}.")
+            print(f"\n--- Random Sample Optimization: {random_sample_size} of {total_combinations} combinations ---")
             all_param_combinations = random.sample(all_param_combinations, random_sample_size)
-            total_combinations = len(all_param_combinations) # Update the count
+            total_combinations = random_sample_size
         
         if total_combinations == 0:
             print("No parameter combinations generated. Check parameter ranges.")
@@ -258,13 +254,7 @@ class SignalBasedOptimizer:
              print("Proceeding with optimization...")
 
         try:
-            # Get the backtester object to calculate target trades
             backtester = client.gather(backtester_future)
-            num_coins = len(backtester.watch_data['watch_id'].unique())
-            target_trades = num_coins * 0.5  # Target is 50% of available coins
-            trade_std = num_coins * 0.25     # Allow wider variance for larger datasets
-            print(f"\nTrade Count Target: {target_trades:.0f} trades (±{trade_std:.0f})")
-            print(f"Based on {num_coins} unique coins in dataset")
 
             if self.use_walk_forward:
                 print(f"\nUsing Walk-Forward Optimization")
