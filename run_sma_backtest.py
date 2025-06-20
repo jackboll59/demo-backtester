@@ -19,8 +19,9 @@ def run_basic_backtest(start_line: int = None):
     
     backtester = Backtester()
     
+    
     # Create strategy with default or specified parameters
-    basic_params = SMAParams(short_window=20, long_window=120)
+    basic_params = SMAParams(short_window=10, long_window=150)
     sma_strategy = SMAStrategy(basic_params)
     
     print(f"Strategy: {sma_strategy.get_name()}")
@@ -32,7 +33,9 @@ def run_basic_backtest(start_line: int = None):
         'position_sizing_pct': 0.25, # 25% of capital per trade (must be decimal, not percentage)
         'max_trades_per_coin': 1, # Keeps it simple, but could be changed to a higher number
         'execution_delay_seconds': 3, # Simple slippage simulation
-        'stop_loss_pct': 5.0, # Example stop loss
+        'flat_fee_usd': 0.0,  # Match optimizer: explicit flat fee
+        'stop_loss_pct': 20.0, # Example stop loss
+        'scramble_order': False,  # Match optimizer: explicit scramble setting
         'start_line': start_line
     }
 
@@ -66,7 +69,7 @@ def run_parameter_optimization():
         'initial_capital': 100.0,
         'fee_pct': 0.025,
         'flat_fee_usd': 0.0,
-        'position_sizing_pct': 1.0,
+        'position_sizing_pct': 0.25,  # Match single backtest: 25% of capital per trade
         'max_trades_per_coin': 1,
         'execution_delay_seconds': 3,
         'use_walk_forward': False,

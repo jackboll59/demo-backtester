@@ -234,7 +234,6 @@ class PlottingMixin:
                     except (ValueError, TypeError):
                         best_summary_dict[col] = 0.0
 
-        # Check if walk-forward optimization was used (presence of test metrics indicates WFO)
         has_wfo = best_summary_dict and all(k in best_summary_dict for k in ['test_return_pct', 'test_drawdown_pct', 'test_win_rate_pct'])
         
         # Create subplot figure based on whether WFO was used
@@ -302,7 +301,26 @@ class PlottingMixin:
         if has_wfo:
             col_position = 1
         else:
-            col_position = 1  # Single column layout
+            col_position = 1
+        
+        # Calculate color scale limits for better distribution
+        score_values = results_df['score'].dropna()
+        if len(score_values) > 0:
+            # Use percentiles to set color range, excluding extreme outliers
+            score_min = score_values.quantile(0.05)  # 5th percentile
+            score_max = score_values.quantile(0.95)  # 95th percentile
+            
+            # Ensure we have a reasonable range
+            if score_max <= score_min:
+                score_min = score_values.min()
+                score_max = score_values.max()
+            
+            # If still no range, set defaults
+            if score_max <= score_min:
+                score_min = -1
+                score_max = 1
+        else:
+            score_min, score_max = -1, 1
             
         fig.add_trace(
             go.Scatter(
@@ -313,9 +331,13 @@ class PlottingMixin:
                 marker=dict(
                     size=8,
                     color=results_df['score'],
-                    colorscale='Viridis',
+                    colorscale=[[0, 'purple'], [0.5, 'mediumpurple'], [1, 'aqua']],
                     showscale=True,
-                    colorbar=dict(title="Score")
+                    colorbar=dict(
+                        title="Score"
+                    ),
+                    cmin=score_min,  # Set explicit color range
+                    cmax=score_max
                 ),
                 text=hover_text,
                 hoverinfo='text',

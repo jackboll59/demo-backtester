@@ -135,33 +135,26 @@ class SignalBasedOptimizer:
     def _calculate_scores(self, results: List[Dict], backtester: 'Backtester') -> List[Dict]:
         """
         Calculate scores for all results, balancing total return against max drawdown.
-        Outliers are not penalized, and the focus is on the return/drawdown ratio.
+        Uses a more reasonable scale that doesn't heavily distort negative returns.
         """
         if not results:
             return []
 
-        # Use a small minimum for drawdown to handle cases of zero or near-zero drawdown gracefully.
-        # This prevents division-by-zero errors and disproportionately high scores for tiny drawdowns.
         MINIMUM_DRAWDOWN = 0.1 # Represents 0.1%
 
         for result in results:
             # If the run failed, assign a very low score.
             if result.get('run_error', False):
-                result['score'] = float('-inf')
+                result['score'] = -100.0
                 continue
 
             return_pct = result.get('total_return_pct', 0.0)
             drawdown_pct = abs(result.get('max_drawdown_pct', 0.0))
+            effective_drawdown = max(drawdown_pct, MINIMUM_DRAWDOWN)
 
-            # Heavily penalize any strategy that loses money.
             if return_pct <= 0:
-                # The score will be a large negative number, ensuring it's ranked last.
-                result['score'] = return_pct - 1000
+                result['score'] = return_pct / effective_drawdown
             else:
-                # Calculate the effective drawdown.
-                effective_drawdown = max(drawdown_pct, MINIMUM_DRAWDOWN)
-                
-                # The score is the ratio of return to effective drawdown.
                 result['score'] = return_pct / effective_drawdown
 
         return results
